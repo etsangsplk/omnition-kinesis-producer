@@ -155,7 +155,7 @@ func TestProducer(t *testing.T) {
 		test.config.StreamName = test.name
 		test.config.MaxConnections = 1
 		test.config.Client = test.putter
-		p := New(test.config)
+		p := New(test.config, nil)
 		p.Start()
 		var wg sync.WaitGroup
 		wg.Add(len(test.records))
@@ -187,7 +187,7 @@ func TestNotify(t *testing.T) {
 			incoming:  make(map[int][]string),
 			responses: []responseMock{{Error: kError}},
 		},
-	})
+	}, nil)
 	p.Start()
 	records := genBulk(10, "bar")
 	var wg sync.WaitGroup
