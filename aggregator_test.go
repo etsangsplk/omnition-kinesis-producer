@@ -38,10 +38,11 @@ func TestAggregation(t *testing.T) {
 		wg.Done()
 	}
 	wg.Wait()
-	record, err := a.Drain()
+	batch, err := a.Drain()
 	if err != nil {
 		t.Error(err)
 	}
+	record := batch.Records
 	assert(t, isAggregated(record), "should return an agregated record")
 	records := extractRecords(record)
 	for i := 0; i < n; i++ {

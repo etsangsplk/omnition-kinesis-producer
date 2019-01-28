@@ -18,7 +18,7 @@ func ExampleSimple() {
 		BacklogCount: 2000,
 		Client:       client,
 		Logger:       logger,
-	})
+	}, nil)
 
 	pr.Start()
 
