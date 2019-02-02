@@ -258,7 +258,14 @@ func (p *Producer) drainIfNeed() (*AggregatedBatch, bool) {
 // flush records and retry failures if necessary.
 // for example: when we get "ProvisionedThroughputExceededException"
 func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, count int, reason string) {
+	// TODO(owais): Replace simple backoff with a queue. Re-queue failed records to the same queue to be
+	// auto retried later. Drop records if queue overflows or use back-pressure.
+
+	retries := 0
 	b := &backoff.Backoff{
+		Min:    2 * time.Second,
+		Max:    30 * time.Second,
+		Factor: 2,
 		Jitter: true,
 	}
 
@@ -319,8 +326,13 @@ func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, count int, r
 		)
 		time.Sleep(duration)
 
+		if retries > p.MaxRetries {
+			p.hooks.OnDropped(int64(len(records)))
+		}
+
 		// change the logging state for the next itertion
 		reason = FlushReasonRetry
+		retries += 1
 		records = failures(records, out.Records)
 	}
 }

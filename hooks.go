@@ -16,6 +16,11 @@ type Hooks interface {
 	// up before being pushed to a stream. It passes the size (in bytes)
 	// and length (number of records) as arguments.
 	OnPutErr(errCode string)
+
+	// OnDropped hook is called when records are dropped. Records are dropped when
+	// they are retried without success for a number of times. The number of retries before
+	// dropping spans is determined by the `MaxRetryAttempts` config value.
+	OnDropped(numRecords int64)
 }
 
 type noopHooks struct{}
@@ -25,3 +30,5 @@ func (h *noopHooks) OnDrain(size, length int64) {}
 func (h *noopHooks) OnPutRecords(batches, records, putLatencyMS int64, reason string) {}
 
 func (h *noopHooks) OnPutErr(errCode string) {}
+
+func (h *noopHooks) OnDropped(numRecords int64) {}

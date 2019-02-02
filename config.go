@@ -19,6 +19,7 @@ const (
 	// it's kinda odd, because the maxAggregationSize is limit to 51200L;
 	maxAggregationCount   = 4294967295
 	defaultMaxConnections = 24
+	defaultMaxRetries     = 10
 	defaultFlushInterval  = 5 * time.Second
 )
 
@@ -54,6 +55,9 @@ type Config struct {
 
 	// Number of requests to sent concurrently. Default to 24.
 	MaxConnections int
+
+	// Number of retry attempts to make before dropping records. Default to 10.
+	MaxRetries int
 
 	// Logger is the logger used. Default to producer.Logger.
 	Logger Logger
@@ -91,6 +95,9 @@ func (c *Config) defaults() {
 	falseOrPanic(c.AggregateBatchSize > maxAggregationSize, "kinesis: AggregateBatchSize exceeds 50KB")
 	if c.MaxConnections == 0 {
 		c.MaxConnections = defaultMaxConnections
+	}
+	if c.MaxRetries == 0 {
+		c.MaxRetries = defaultMaxRetries
 	}
 	falseOrPanic(c.MaxConnections < 1 || c.MaxConnections > 256, "kinesis: MaxConnections must be between 1 and 256")
 	if c.FlushInterval == 0 {
