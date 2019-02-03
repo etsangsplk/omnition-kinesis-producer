@@ -29,7 +29,7 @@ var (
 	FlushReasonBatchLength = "batch_length"
 	FlushReasonDrain       = "drain"
 	FlushReasonInterval    = "interval"
-	FlushReasonRetry       = "interval"
+	FlushReasonRetry       = "retry"
 )
 
 // Producer batches records.
@@ -90,7 +90,7 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 	nbytes := len(data) + len([]byte(partitionKey))
 	// if the record size is bigger than aggregation size
 	// handle it as a simple kinesis record
-	if nbytes > p.AggregateBatchSize {
+	if nbytes >= p.AggregateBatchSize {
 		p.batches <- &AggregatedBatch{
 			Records: &kinesis.PutRecordsRequestEntry{
 				Data:         data,
@@ -101,7 +101,7 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 		}
 	} else {
 		p.RLock()
-		needToDrain := nbytes+p.aggregator.Size() > p.AggregateBatchSize || p.aggregator.Count() >= p.AggregateBatchCount
+		needToDrain := nbytes+p.aggregator.Size() >= p.AggregateBatchSize || p.aggregator.Count() >= p.AggregateBatchCount
 		p.RUnlock()
 		var (
 			batch *AggregatedBatch
@@ -183,12 +183,13 @@ func (p *Producer) loop() {
 	size := 0
 	count := 0
 	drain := false
-	buf := make([]*kinesis.PutRecordsRequestEntry, 0, p.BatchCount)
+	// buf := make([]*kinesis.PutRecordsRequestEntry, 0, p.BatchCount)
+	buf := make([]*AggregatedBatch, 0, p.BatchCount)
 	tick := time.NewTicker(p.FlushInterval)
 
 	flush := func(msg string) {
 		p.semaphore.acquire()
-		go p.flush(buf, count, msg)
+		go p.flush(buf, msg)
 		buf = nil
 		size = 0
 		count = 0
@@ -204,7 +205,7 @@ func (p *Producer) loop() {
 		}
 		size += batch.Size
 		count += batch.Count
-		buf = append(buf, batch.Records)
+		buf = append(buf, batch)
 		if len(buf) >= p.BatchCount {
 			flush(FlushReasonBatchLength)
 		}
@@ -257,7 +258,8 @@ func (p *Producer) drainIfNeed() (*AggregatedBatch, bool) {
 
 // flush records and retry failures if necessary.
 // for example: when we get "ProvisionedThroughputExceededException"
-func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, count int, reason string) {
+// func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, count int, reason string) {
+func (p *Producer) flush(batches []*AggregatedBatch, reason string) {
 	// TODO(owais): Replace simple backoff with a queue. Re-queue failed records to the same queue to be
 	// auto retried later. Drop records if queue overflows or use back-pressure.
 
@@ -272,6 +274,22 @@ func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, count int, r
 	defer p.semaphore.release()
 
 	for {
+		// prepare records
+		totalSize := 0
+		totalRecords := 0
+		records := make([]*kinesis.PutRecordsRequestEntry, 0, len(batches))
+		for _, b := range batches {
+			records = append(records, b.Records)
+			totalRecords += b.Count
+			totalSize += b.Size
+		}
+
+		if retries > p.MaxRetries {
+			p.hooks.OnDropped(int64(len(records)), int64(totalRecords), int64(totalSize))
+			return
+		}
+
+		// push to kinesis
 		startTime := time.Now()
 		p.Logger.Info("flushing records", LogValue{"reason", reason}, LogValue{"records", len(records)})
 		out, err := p.Client.PutRecords(&kinesis.PutRecordsInput{
@@ -291,10 +309,12 @@ func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, count int, r
 		}
 
 		putLatencyMs := int64(time.Since(startTime) / time.Millisecond)
-		p.hooks.OnPutRecords(int64(len(records)), int64(count), putLatencyMs, reason)
+		p.hooks.OnPutRecords(int64(len(records)), int64(totalRecords), int64(totalSize), putLatencyMs, reason)
 
+		retryBatches := make([]*AggregatedBatch, 0, len(batches))
 		for i, r := range out.Records {
 			if r.ErrorCode != nil {
+				retryBatches = append(retryBatches, batches[i])
 				p.hooks.OnPutErr(*r.ErrorCode)
 				v := []LogValue{
 					{"ErrorCode", *r.ErrorCode},
@@ -317,6 +337,7 @@ func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, count int, r
 			return
 		}
 
+		batches = retryBatches
 		duration := b.Duration()
 
 		p.Logger.Info(
@@ -326,13 +347,9 @@ func (p *Producer) flush(records []*kinesis.PutRecordsRequestEntry, count int, r
 		)
 		time.Sleep(duration)
 
-		if retries > p.MaxRetries {
-			p.hooks.OnDropped(int64(len(records)))
-		}
-
 		// change the logging state for the next itertion
 		reason = FlushReasonRetry
-		retries += 1
+		retries++
 		records = failures(records, out.Records)
 	}
 }

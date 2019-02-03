@@ -10,7 +10,7 @@ type Hooks interface {
 	// OnPutRecords hook is called when batches are pushed to kinesis. It passes the number of
 	// batches, number of records, milliseconds the push took to complete and then reason for
 	// flushing as arguments
-	OnPutRecords(numRecords, numTotalRecords, putLatencyMS int64, reason string)
+	OnPutRecords(numBatches, numRecords, size, putLatencyMS int64, reason string)
 
 	// OnDrain hook is called when records from the in-memory buffer are batched
 	// up before being pushed to a stream. It passes the size (in bytes)
@@ -20,15 +20,15 @@ type Hooks interface {
 	// OnDropped hook is called when records are dropped. Records are dropped when
 	// they are retried without success for a number of times. The number of retries before
 	// dropping spans is determined by the `MaxRetryAttempts` config value.
-	OnDropped(numRecords int64)
+	OnDropped(numBatches, numRecords, size int64)
 }
 
 type noopHooks struct{}
 
 func (h *noopHooks) OnDrain(size, length int64) {}
 
-func (h *noopHooks) OnPutRecords(batches, records, putLatencyMS int64, reason string) {}
+func (h *noopHooks) OnPutRecords(batches, records, size, putLatencyMS int64, reason string) {}
 
 func (h *noopHooks) OnPutErr(errCode string) {}
 
-func (h *noopHooks) OnDropped(numRecords int64) {}
+func (h *noopHooks) OnDropped(batches, records, size int64) {}
