@@ -291,7 +291,10 @@ func (p *Producer) flush(batches []*AggregatedBatch, reason string) {
 
 		// push to kinesis
 		startTime := time.Now()
-		p.Logger.Info("flushing records", LogValue{"reason", reason}, LogValue{"records", len(records)})
+
+		if p.Verbose {
+			p.Logger.Info("flushing records", LogValue{"reason", reason}, LogValue{"records", len(records)})
+		}
 		out, err := p.Client.PutRecords(&kinesis.PutRecordsInput{
 			StreamName: &p.StreamName,
 			Records:    records,
