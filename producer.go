@@ -9,6 +9,7 @@ package producer
 import (
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -36,7 +37,8 @@ var (
 type Producer struct {
 	sync.RWMutex
 	*Config
-	aggregator *Aggregator
+	// aggregator *Aggregator
+	aggregator *SuperAggregator
 	semaphore  semaphore
 	batches    chan *AggregatedBatch
 	failure    chan *FailureRecord
@@ -57,13 +59,18 @@ func New(config *Config, hooks Hooks) *Producer {
 	if hooks == nil {
 		hooks = &noopHooks{}
 	}
+	shards, err := getShardsForStream(config)
+	if err != nil {
+		log.Panic(err)
+	}
 	return &Producer{
-		Config:     config,
-		done:       make(chan struct{}),
-		hooks:      hooks,
-		batches:    make(chan *AggregatedBatch, config.BacklogCount),
-		semaphore:  make(chan struct{}, config.MaxConnections),
-		aggregator: new(Aggregator),
+		Config:    config,
+		done:      make(chan struct{}),
+		hooks:     hooks,
+		batches:   make(chan *AggregatedBatch, config.BacklogCount),
+		semaphore: make(chan struct{}, config.MaxConnections),
+		// aggregator: new(Aggregator),
+		aggregator: newSuperAggregator(shards),
 	}
 }
 
@@ -103,14 +110,14 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 		p.RLock()
 		needToDrain := nbytes+p.aggregator.Size() >= p.AggregateBatchSize || p.aggregator.Count() >= p.AggregateBatchCount
 		p.RUnlock()
-		var (
-			batch *AggregatedBatch
-			err   error
-		)
+		batches := []*AggregatedBatch{}
+		var err error
 		p.Lock()
 		if needToDrain {
-			if batch, err = p.aggregator.Drain(); err != nil {
-				p.Logger.Error("drain aggregator", err)
+			if batches, err = p.aggregator.Drain(); err != nil {
+				if err != nil {
+					p.Logger.Error("=========================== drain aggregator", err)
+				}
 			}
 		}
 		p.aggregator.Put(data, partitionKey)
@@ -118,8 +125,10 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 		// release the lock and then pipe the record to the records channel
 		// we did it, because the "send" operation blocks when the backlog is full
 		// and this can cause deadlock(when we never release the lock)
-		if needToDrain && batch != nil {
-			p.batches <- batch
+		if needToDrain {
+			for _, batch := range batches {
+				p.batches <- batch
+			}
 		}
 	}
 	return nil
@@ -159,8 +168,10 @@ func (p *Producer) Stop() {
 	p.Logger.Info("stopping producer", LogValue{"backlog batches", len(p.batches)})
 
 	// drain
-	if batch, ok := p.drainIfNeed(); ok {
-		p.batches <- batch
+	if batches, ok := p.drainIfNeed(); ok {
+		for _, batch := range batches {
+			p.batches <- batch
+		}
 	}
 	p.done <- struct{}{}
 	close(p.batches)
@@ -198,6 +209,9 @@ func (p *Producer) loop() {
 	batchAppend := func(batch *AggregatedBatch) {
 		// the record size limit applies to the total size of the
 		// partition key and data blob.
+		if batch == nil {
+			fmt.Println("IT IS NIILLLLL:::", batch)
+		}
 		p.hooks.OnDrain(int64(batch.Size), int64(batch.Count))
 
 		if size+batch.Size > p.BatchSize {
@@ -224,10 +238,18 @@ func (p *Producer) loop() {
 				p.Logger.Info("backlog drained")
 				return
 			}
+			if batch == nil {
+				fmt.Println("appending nil batch <<<<")
+			}
 			batchAppend(batch)
 		case <-tick.C:
-			if batch, ok := p.drainIfNeed(); ok {
-				batchAppend(batch)
+			if batches, ok := p.drainIfNeed(); ok {
+				for _, batch := range batches {
+					if batch == nil {
+						fmt.Println("appending nil in batch loop <<<<")
+					}
+					batchAppend(batch)
+				}
 			}
 			// if the buffer is still containing records
 			if size > 0 {
@@ -239,18 +261,19 @@ func (p *Producer) loop() {
 	}
 }
 
-func (p *Producer) drainIfNeed() (*AggregatedBatch, bool) {
+func (p *Producer) drainIfNeed() ([]*AggregatedBatch, bool) {
 	p.RLock()
 	needToDrain := p.aggregator.Size() > 0
 	p.RUnlock()
 	if needToDrain {
 		p.Lock()
-		batch, err := p.aggregator.Drain()
+		batches, err := p.aggregator.Drain()
 		p.Unlock()
 		if err != nil {
 			p.Logger.Error("drain aggregator", err)
+			log.Panic("drain agg error:", err)
 		} else {
-			return batch, true
+			return batches, true
 		}
 	}
 	return nil, false
@@ -263,6 +286,7 @@ func (p *Producer) flush(batches []*AggregatedBatch, reason string) {
 	// TODO(owais): Replace simple backoff with a queue. Re-queue failed records to the same queue to be
 	// auto retried later. Drop records if queue overflows or use back-pressure.
 
+	fmt.Println("flushed batches: ", len(batches), reason)
 	retries := 0
 	b := &backoff.Backoff{
 		Min:    2 * time.Second,

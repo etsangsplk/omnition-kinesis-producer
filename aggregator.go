@@ -22,6 +22,8 @@ type Aggregator struct {
 	buf    []*Record
 	pkeys  []string
 	nbytes int
+
+	Shard *Shard
 }
 
 // Size return how many bytes stored in the aggregator.
