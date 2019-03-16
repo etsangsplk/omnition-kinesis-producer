@@ -27,6 +27,10 @@ func getShardsForStream(config *Config) ([]*Shard, error) {
 	// TODO: Handle pagination and fetch all shards
 	shards := []*Shard{}
 	for _, s := range out.StreamDescription.Shards {
+		if s.SequenceNumberRange.EndingSequenceNumber != nil {
+			continue
+		}
+
 		shards = append(shards, &Shard{
 			shardId:         *s.ShardId,
 			startingHashKey: toBigInt(*s.HashKeyRange.StartingHashKey),

@@ -285,8 +285,6 @@ func (p *Producer) drainIfNeed() ([]*AggregatedBatch, bool) {
 func (p *Producer) flush(batches []*AggregatedBatch, reason string) {
 	// TODO(owais): Replace simple backoff with a queue. Re-queue failed records to the same queue to be
 	// auto retried later. Drop records if queue overflows or use back-pressure.
-
-	fmt.Println("flushed batches: ", len(batches), reason)
 	retries := 0
 	b := &backoff.Backoff{
 		Min:    2 * time.Second,
