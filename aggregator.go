@@ -3,6 +3,7 @@ package producer
 import (
 	"bytes"
 	"crypto/md5"
+	"fmt"
 
 	k "github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/golang/protobuf/proto"
@@ -68,7 +69,7 @@ func (a *Aggregator) Drain() (*AggregatedBatch, error) {
 		Records:           a.buf,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal to proto: %v", err)
 	}
 	h := md5.New()
 	h.Write(data)

@@ -64,12 +64,11 @@ func New(config *Config, hooks Hooks) *Producer {
 		log.Panic(err)
 	}
 	return &Producer{
-		Config:    config,
-		done:      make(chan struct{}),
-		hooks:     hooks,
-		batches:   make(chan *AggregatedBatch, config.BacklogCount),
-		semaphore: make(chan struct{}, config.MaxConnections),
-		// aggregator: new(Aggregator),
+		Config:     config,
+		done:       make(chan struct{}),
+		hooks:      hooks,
+		batches:    make(chan *AggregatedBatch, config.BacklogCount),
+		semaphore:  make(chan struct{}, config.MaxConnections),
 		aggregator: newSuperAggregator(shards),
 	}
 }
@@ -116,11 +115,11 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 		if needToDrain {
 			if batches, err = p.aggregator.Drain(); err != nil {
 				if err != nil {
-					p.Logger.Error("=========================== drain aggregator", err)
+					p.Logger.Error("Error draining from aggregator", err)
 				}
 			}
 		}
-		p.aggregator.Put(data, partitionKey)
+		putErr := p.aggregator.Put(data, partitionKey)
 		p.Unlock()
 		// release the lock and then pipe the record to the records channel
 		// we did it, because the "send" operation blocks when the backlog is full
@@ -129,6 +128,10 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 			for _, batch := range batches {
 				p.batches <- batch
 			}
+		}
+		if putErr != nil {
+			p.hooks.OnPutErr(string(putErr.ErrorCode))
+			return putErr
 		}
 	}
 	return nil
@@ -209,9 +212,6 @@ func (p *Producer) loop() {
 	batchAppend := func(batch *AggregatedBatch) {
 		// the record size limit applies to the total size of the
 		// partition key and data blob.
-		if batch == nil {
-			fmt.Println("IT IS NIILLLLL:::", batch)
-		}
 		p.hooks.OnDrain(int64(batch.Size), int64(batch.Count))
 
 		if size+batch.Size > p.BatchSize {

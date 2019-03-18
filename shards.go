@@ -66,7 +66,7 @@ type Shard struct {
 func (s *Shard) belongsToShard(partitionKey string) (bool, error) {
 	key, err := s.partitionKeyToHashKey(partitionKey)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("err hashing partition key: %v", err)
 	}
 	return key.Cmp(s.startingHashKey) >= 0 && key.Cmp(s.endingHashKey) <= 0, nil
 }

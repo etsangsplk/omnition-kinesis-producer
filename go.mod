@@ -1,6 +1,7 @@
 module github.com/omnition/kinesis-producer
 
 require (
+	github.com/allegro/bigcache v1.2.0
 	github.com/aws/aws-sdk-go v1.16.26
 	github.com/golang/protobuf v1.2.0
 	github.com/jpillora/backoff v0.0.0-20180909062703-3050d21c67d7

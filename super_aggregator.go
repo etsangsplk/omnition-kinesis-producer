@@ -45,12 +45,13 @@ func (sa *SuperAggregator) Drain() ([]*AggregatedBatch, error) {
 	return batches, nil
 }
 
-func (sa *SuperAggregator) Put(data []byte, partitionKey string) {
+func (sa *SuperAggregator) Put(data []byte, partitionKey string) *Error {
 	aggregator, err := sa.getAggregatorForPartitionKey(partitionKey)
 	if err != nil {
-		// this should never happen. Report/Panic?
+		return &Error{err, ErrShardNotFound}
 	}
 	aggregator.Put(data, partitionKey)
+	return nil
 }
 
 func (sa *SuperAggregator) getAggregatorForPartitionKey(partitionKey string) (*Aggregator, error) {
@@ -63,6 +64,5 @@ func (sa *SuperAggregator) getAggregatorForPartitionKey(partitionKey string) (*A
 			return aggregator, nil
 		}
 	}
-	// TODO: wrap original
 	return nil, fmt.Errorf("no aggregator/shard found for parition key %s", partitionKey)
 }
