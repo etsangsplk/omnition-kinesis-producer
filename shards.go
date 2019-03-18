@@ -17,28 +17,38 @@ func getShardsForStream(config *Config) ([]*Shard, error) {
 		return nil, fmt.Errorf("config.Putter must be a pointer to kinesis.Kinesis")
 	}
 
-	out, err := k.DescribeStream(&kinesis.DescribeStreamInput{
+	listShardsInput := &kinesis.ListShardsInput{
 		StreamName: aws.String(config.StreamName),
-	})
-	if err != nil {
-		return nil, err
+		MaxResults: aws.Int64(100),
 	}
 
-	// TODO: Handle pagination and fetch all shards
 	shards := []*Shard{}
-	for _, s := range out.StreamDescription.Shards {
-		if s.SequenceNumberRange.EndingSequenceNumber != nil {
-			continue
+	for {
+		resp, err := k.ListShards(listShardsInput)
+		if err != nil {
+			return nil, fmt.Errorf("ListShards error: %v", err)
 		}
 
-		shards = append(shards, &Shard{
-			shardId:         *s.ShardId,
-			startingHashKey: toBigInt(*s.HashKeyRange.StartingHashKey),
-			endingHashKey:   toBigInt(*s.HashKeyRange.EndingHashKey),
-		})
-	}
+		for _, s := range resp.Shards {
+			// shard is closed so skip it
+			if s.SequenceNumberRange.EndingSequenceNumber != nil {
+				continue
+			}
+			shards = append(shards, &Shard{
+				shardId:         *s.ShardId,
+				startingHashKey: toBigInt(*s.HashKeyRange.StartingHashKey),
+				endingHashKey:   toBigInt(*s.HashKeyRange.EndingHashKey),
+			})
+		}
 
-	return shards, nil
+		if resp.NextToken == nil {
+			return shards, nil
+		}
+
+		listShardsInput = &kinesis.ListShardsInput{
+			NextToken: resp.NextToken,
+		}
+	}
 }
 
 func toBigInt(key string) *big.Int {
