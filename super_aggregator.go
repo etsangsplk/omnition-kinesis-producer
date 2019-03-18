@@ -45,6 +45,20 @@ func (sa *SuperAggregator) Drain() ([]*AggregatedBatch, error) {
 	return batches, nil
 }
 
+func (sa *SuperAggregator) DrainIfConstrained(nbytes int, maxBatchSize int) ([]*AggregatedBatch, error) {
+	batches := []*AggregatedBatch{}
+	for _, a := range sa.aggregators {
+		batch, err := a.DrainIfConstrained(nbytes, maxBatchSize)
+		if err != nil {
+			return batches, err
+		}
+		if batch != nil {
+			batches = append(batches, batch)
+		}
+	}
+	return batches, nil
+}
+
 func (sa *SuperAggregator) Put(data []byte, partitionKey string) *Error {
 	aggregator, err := sa.getAggregatorForPartitionKey(partitionKey)
 	if err != nil {

@@ -106,25 +106,13 @@ func (p *Producer) Put(data []byte, partitionKey string) error {
 			Size:  nbytes,
 		}
 	} else {
-		p.RLock()
-		needToDrain := nbytes+p.aggregator.Size() >= p.AggregateBatchSize || p.aggregator.Count() >= p.AggregateBatchCount
-		p.RUnlock()
-		batches := []*AggregatedBatch{}
-		var err error
-		p.Lock()
-		if needToDrain {
-			if batches, err = p.aggregator.Drain(); err != nil {
-				if err != nil {
-					p.Logger.Error("Error draining from aggregator", err)
-				}
-			}
+		batches, err := p.aggregator.DrainIfConstrained(nbytes, p.AggregateBatchCount)
+		if err != nil {
+			p.Logger.Error("Error draining from aggregator", err)
 		}
+
 		putErr := p.aggregator.Put(data, partitionKey)
-		p.Unlock()
-		// release the lock and then pipe the record to the records channel
-		// we did it, because the "send" operation blocks when the backlog is full
-		// and this can cause deadlock(when we never release the lock)
-		if needToDrain {
+		if len(batches) > 0 {
 			for _, batch := range batches {
 				p.batches <- batch
 			}
@@ -266,9 +254,7 @@ func (p *Producer) drainIfNeed() ([]*AggregatedBatch, bool) {
 	needToDrain := p.aggregator.Size() > 0
 	p.RUnlock()
 	if needToDrain {
-		p.Lock()
 		batches, err := p.aggregator.Drain()
-		p.Unlock()
 		if err != nil {
 			p.Logger.Error("drain aggregator", err)
 			log.Panic("drain agg error:", err)

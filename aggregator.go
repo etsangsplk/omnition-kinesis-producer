@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/md5"
 	"fmt"
+	"sync"
 
 	k "github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/golang/protobuf/proto"
@@ -20,6 +21,7 @@ type AggregatedBatch struct {
 }
 
 type Aggregator struct {
+	sync.RWMutex
 	buf    []*Record
 	pkeys  []string
 	nbytes int
@@ -40,6 +42,8 @@ func (a *Aggregator) Count() int {
 
 // Put record using `data` and `partitionKey`. This method is thread-safe.
 func (a *Aggregator) Put(data []byte, partitionKey string) {
+	a.Lock()
+	defer a.Unlock()
 	// For now, all records in the aggregated record will have
 	// the same partition key.
 	// later, we will add shard-mapper same as the KPL use.
@@ -61,6 +65,8 @@ func (a *Aggregator) Put(data []byte, partitionKey string) {
 //
 // If you interested to know more about it. see: aggregation-format.md
 func (a *Aggregator) Drain() (*AggregatedBatch, error) {
+	a.Lock()
+	defer a.Unlock()
 	if a.nbytes == 0 {
 		return nil, nil
 	}
@@ -86,6 +92,17 @@ func (a *Aggregator) Drain() (*AggregatedBatch, error) {
 	}
 	a.clear()
 	return batch, nil
+}
+
+func (a *Aggregator) DrainIfConstrained(nbytes int, maxBatchSize int) (*AggregatedBatch, error) {
+	a.RLock()
+	needToDrain := nbytes+a.Size() >= maxBatchSize || a.Count() >= maxBatchSize
+	a.RUnlock()
+
+	if needToDrain {
+		return a.Drain()
+	}
+	return nil, nil
 }
 
 func (a *Aggregator) clear() {
