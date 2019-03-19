@@ -63,8 +63,6 @@ func New(config *Config, hooks Hooks) *Producer {
 	if err != nil {
 		log.Panic(err)
 	}
-	fmt.Println("maxcon:", config.MaxConnections)
-	fmt.Println("back:", config.BacklogCount)
 	return &Producer{
 		Config:     config,
 		done:       make(chan struct{}),
