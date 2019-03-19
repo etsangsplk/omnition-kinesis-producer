@@ -13,7 +13,7 @@ import (
 const (
 	maxRecordSize        = 1 << 20 // 1MiB
 	maxRequestSize       = 5 << 20 // 5MiB
-	maxRecordsPerRequest = 1000
+	maxRecordsPerRequest = 500
 	maxAggregationSize   = 51200 // 50KB
 	// The KinesisProducerConfiguration set the default to 4294967295L;
 	// it's kinda odd, because the maxAggregationSize is limit to 51200L;
