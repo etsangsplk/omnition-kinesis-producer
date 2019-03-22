@@ -13,7 +13,7 @@ import (
 const (
 	maxRecordSize        = 1 << 20 // 1MiB
 	maxRequestSize       = 5 << 20 // 5MiB
-	maxRecordsPerRequest = 500
+	maxRecordsPerRequest = 1000
 	maxAggregationSize   = 51200 // 50KB
 	// The KinesisProducerConfiguration set the default to 4294967295L;
 	// it's kinda odd, because the maxAggregationSize is limit to 51200L;
@@ -38,7 +38,7 @@ type Config struct {
 	FlushInterval time.Duration
 
 	// BatchCount determine the maximum number of items to pack in batch.
-	// Must not exceed length. Defaults to 500.
+	// Must not exceed length. Defaults to 1000.
 	BatchCount int
 
 	// BatchSize determine the maximum number of bytes to send with a PutRecords request.
@@ -79,7 +79,7 @@ func (c *Config) defaults() {
 	if c.BatchCount == 0 {
 		c.BatchCount = maxRecordsPerRequest
 	}
-	falseOrPanic(c.BatchCount > maxRecordsPerRequest, "kinesis: BatchCount exceeds 500")
+	falseOrPanic(c.BatchCount > maxRecordsPerRequest, "kinesis: BatchCount exceeds 1000")
 	if c.BatchSize == 0 {
 		c.BatchSize = maxRequestSize
 	}
