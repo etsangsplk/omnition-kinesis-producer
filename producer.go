@@ -57,6 +57,11 @@ func New(config *Config, hooks Hooks) *Producer {
 	if hooks == nil {
 		hooks = &noopHooks{}
 	}
+	fmt.Println("==============>>")
+	fmt.Println("max retirs: ", config.MaxRetries)
+	fmt.Println("max backoff: ", config.MaxBackoffTime)
+	fmt.Println("flush interval: ", config.FlushInterval)
+	fmt.Println("==============>>")
 	return &Producer{
 		Config:     config,
 		done:       make(chan struct{}),
@@ -265,8 +270,8 @@ func (p *Producer) flush(batches []*AggregatedBatch, reason string) {
 
 	retries := 0
 	b := &backoff.Backoff{
-		Min:    2 * time.Second,
-		Max:    30 * time.Second,
+		Min:    1 * time.Second,
+		Max:    p.MaxBackoffTime,
 		Factor: 2,
 		Jitter: true,
 	}
