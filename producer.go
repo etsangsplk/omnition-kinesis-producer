@@ -57,11 +57,7 @@ func New(config *Config, hooks Hooks) *Producer {
 	if hooks == nil {
 		hooks = &noopHooks{}
 	}
-	fmt.Println("==============>>")
-	fmt.Println("max retirs: ", config.MaxRetries)
-	fmt.Println("max backoff: ", config.MaxBackoffTime)
-	fmt.Println("flush interval: ", config.FlushInterval)
-	fmt.Println("==============>>")
+
 	return &Producer{
 		Config:     config,
 		done:       make(chan struct{}),
