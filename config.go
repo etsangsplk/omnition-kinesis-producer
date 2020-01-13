@@ -33,6 +33,9 @@ type Config struct {
 	// StreamName is the Kinesis stream.
 	StreamName string
 
+	// Kinesis shard
+	Shard string
+
 	// FlushInterval is a regular interval for flushing the buffer. Defaults to 5s.
 	FlushInterval time.Duration
 
@@ -68,6 +71,9 @@ type Config struct {
 
 	// Client is the Putter interface implementation.
 	Client Putter
+
+	// Function to call when resharding needs to be done
+	OnReshard func()
 }
 
 // defaults for configuration
