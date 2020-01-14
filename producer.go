@@ -9,6 +9,7 @@ package producer
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -148,7 +149,7 @@ func (p *Producer) NotifyFailures() <-chan *FailureRecord {
 
 // Start the producer
 func (p *Producer) Start() {
-	p.Logger.Info("starting producer", LogValue{"stream", p.StreamName})
+	p.Logger.Info("starting producer", LogValue{"stream", p.StreamName}, LogValue{"shard", p.Shard})
 	go p.loop()
 }
 
@@ -157,7 +158,7 @@ func (p *Producer) Stop() {
 	p.Lock()
 	p.stopped = true
 	p.Unlock()
-	p.Logger.Info("stopping producer", LogValue{"backlog batches", len(p.batches)})
+	p.Logger.Info("stopping producer", LogValue{"backlog batches", strconv.Itoa(len(p.batches))})
 
 	// drain
 	if batch, ok := p.drainIfNeed(); ok {
@@ -263,7 +264,6 @@ func (p *Producer) drainIfNeed() (*AggregatedBatch, bool) {
 func (p *Producer) flush(batches []*AggregatedBatch, reason string) {
 	// TODO(owais): Replace simple backoff with a queue. Re-queue failed records to the same queue to be
 	// auto retried later. Drop records if queue overflows or use back-pressure.
-
 	retries := 0
 	b := &backoff.Backoff{
 		Min:    1 * time.Second,
@@ -334,6 +334,12 @@ func (p *Producer) flush(batches []*AggregatedBatch, reason string) {
 					LogValue{"SequenceNumber", *r.SequenceNumber},
 				)
 			}
+
+			// if the data we just put onto kafka was not put on the same shard as we expected it to be,
+			// signal this condition by executing the OnReshard method if it is non-nil
+			if p.OnReshard != nil && r.ShardId != nil && *r.ShardId != p.Shard {
+				p.OnReshard()
+			}
 		}
 
 		failed := *out.FailedRecordCount
@@ -346,7 +352,7 @@ func (p *Producer) flush(batches []*AggregatedBatch, reason string) {
 
 		p.Logger.Info(
 			"put failures",
-			LogValue{"failures", failed},
+			LogValue{"failures", strconv.FormatInt(failed, 10)},
 			LogValue{"backoff", duration.String()},
 		)
 		time.Sleep(duration)
